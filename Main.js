@@ -21,6 +21,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 
 // Configuration for private channels
 const OPGAVE_CATEGORY_NAME = 'OPGAVER';
+const Runners = 'Runners';
 const OPGAVE_LOG_CHANNEL_NAME = 'opgave-log'; // Or whatever log channel you want
 const CHANNEL_PREFIX = 'opgave';
 const randomNumber = Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
@@ -48,6 +49,11 @@ const commands = [
         .setName('opgave')
         .setDescription('Opret en ny opgave for serveren')
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    new SlashCommandBuilder()
+        .setName('register')
+        .setDescription('Registrer dig med navn, telefon og Steam link'),
+
 
     new SlashCommandBuilder()
         .setName('pusherinfo')
@@ -108,6 +114,41 @@ client.on('interactionCreate', async (interaction) => {
     await handlePusherInfo(interaction);
     }
 
+        if (interaction.commandName === 'register') {
+        const modal = new ModalBuilder()
+            .setCustomId('register_modal')
+            .setTitle('📋 Registrering');
+
+        const nameInput = new TextInputBuilder()
+            .setCustomId('register_name')
+            .setLabel('Dit navn')
+            .setPlaceholder('F.eks. Emil Hansen')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const phoneInput = new TextInputBuilder()
+            .setCustomId('register_phone')
+            .setLabel('Telefonnummer')
+            .setPlaceholder('12345678')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const steamInput = new TextInputBuilder()
+            .setCustomId('register_steam')
+            .setLabel('Steam Link')
+            .setPlaceholder('https://steamcommunity.com/id/...')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+        const row1 = new ActionRowBuilder().addComponents(nameInput);
+        const row2 = new ActionRowBuilder().addComponents(phoneInput);
+        const row3 = new ActionRowBuilder().addComponents(steamInput);
+
+        modal.addComponents(row1, row2, row3);
+        await interaction.showModal(modal);
+    }
+
+
 });
 
 // Handle button interactions and modals
@@ -115,7 +156,52 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         await handleButtonInteraction(interaction);
     } else if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'opgave_modal') return;
         await handleModalSubmit(interaction);
+    }
+
+        if (interaction.customId === 'register_modal') {
+        const name = interaction.fields.getTextInputValue('register_name');
+        const phone = interaction.fields.getTextInputValue('register_phone');
+        const steam = interaction.fields.getTextInputValue('register_steam');
+
+        const category = interaction.guild.channels.cache.find(
+            c => c.type === 4 && c.name.toLowerCase() === Runners.toLowerCase()
+        );
+
+        const newChannel = await interaction.guild.channels.create({
+            name: name.toLowerCase().replace(/ /g, '-'),
+            type: 0,
+            parent: category?.id || null,
+            permissionOverwrites: [
+                {
+                    id: interaction.guild.roles.everyone.id,
+                    deny: ['ViewChannel']
+                },
+                {
+                    id: interaction.user.id,
+                    allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+                },
+                {
+                    id: interaction.client.user.id,
+                    allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+                }
+            ]
+        });
+
+        const embed = new EmbedBuilder()
+            .setTitle('📋 Ny Registrering')
+            .addFields(
+                { name: '👤 Navn', value: name, inline: true },
+                { name: '📞 Telefonnummer', value: phone, inline: true },
+                { name: '🎮 Steam Link', value: steam, inline: false },
+                { name: '🆔 Bruger', value: `<@${interaction.user.id}>`, inline: false }
+            )
+            .setColor(COLORS.PRIMARY)
+            .setTimestamp();
+
+        await newChannel.send({ embeds: [embed] });
+        await interaction.reply({ content: `✅ Kanal oprettet: <#${newChannel.id}>`, ephemeral: true });
     }
 });
 
