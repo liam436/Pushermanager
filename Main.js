@@ -347,18 +347,37 @@ async function handleModalSubmit(interaction) {
         const navn = interaction.fields.getTextInputValue('opgave_navn');
         const beskrivelse = interaction.fields.getTextInputValue('opgave_beskrivelse');
         const maengde = interaction.fields.getTextInputValue('opgave_maengde');
-        let kanalNavn = interaction.fields.getTextInputValue('opgave_kanal');
-        kanalNavn = kanalNavn
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, '-')
-            .replace(/[^a-z0-9\-]/g, ''); 
+        let kanalNavn = interaction.fields.getTextInputValue('opgave_kanal').trim().toLowerCase();
+
+        let targetChannel = null;
 
 
-        // Find the channel
-    const targetChannel = interaction.guild.channels.cache.find(
-        channel => channel.name === kanalNavn && channel.isTextBased()
-    );
+        targetChannel = interaction.guild.channels.cache.find(
+            ch => ch.isTextBased() && ch.name.toLowerCase() === kanalNavn
+        );
+
+
+        if (!targetChannel && kanalNavn.match(/^<#\d+>$/)) {
+            const channelId = kanalNavn.replace(/[<#>]/g, '');
+            targetChannel = interaction.guild.channels.cache.get(channelId);
+        }
+
+
+        if (!targetChannel && kanalNavn.match(/^\d+$/)) {
+            targetChannel = interaction.guild.channels.cache.get(kanalNavn);
+        }
+
+
+        if (!targetChannel || !targetChannel.isTextBased()) {
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('❌ Kanal Ikke Fundet')
+                .setDescription(`Kunne ikke finde en kanal ud fra: **${kanalNavn}**\n\n**Tips:**\n- Du kan skrive kanalens navn (uden #)\n- Eller du kan bruge kanalens ID\n- Eller brug kanalens mention, fx: <#kanalID>`)
+                .setColor(COLORS.DANGER)
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+        }
+
 
 
         if (!targetChannel) {
