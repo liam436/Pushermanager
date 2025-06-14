@@ -1,19 +1,6 @@
-const {
-    Client, 
-    GatewayIntentBits, 
-    SlashCommandBuilder, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ModalBuilder, 
-    TextInputBuilder, 
-    TextInputStyle,
-    PermissionFlagsBits,
-    REST,
-    Routes
-} = require('discord.js');
-require('dotenv').config();
+import { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits, REST, Routes } from 'discord.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Bot configuration
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -28,10 +15,12 @@ const randomNumber = Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
 const channelName = `${CHANNEL_PREFIX}-${randomNumber}`;
 
 // Create Discord client
-const client = new Client({ 
+const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds
-    ] 
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
 // Colors for embeds
@@ -66,13 +55,13 @@ const commands = [
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 ].map(cmd => cmd.toJSON());
 
-    
+
 
     const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
 
     try {
         console.log('🔄 Registrerer slash commands...');
-        
+
         // Register commands globally (takes up to 1 hour to appear)
         await rest.put(
             Routes.applicationCommands(CLIENT_ID),
@@ -80,7 +69,7 @@ const commands = [
         );
 
         console.log('✅ Slash commands registreret globally!');
-        
+
         // Also register for each guild (appears immediately for testing)
         const guilds = client.guilds.cache.map(guild => guild.id);
         for (const guildId of guilds) {
@@ -90,7 +79,7 @@ const commands = [
             );
             console.log(`✅ Commands registered for guild: ${guildId}`);
         }
-        
+
     } catch (error) {
         console.error('❌ Fejl ved registrering af commands:', error);
     }
@@ -156,7 +145,6 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
         await handleButtonInteraction(interaction);
     } else if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'opgave_modal') return;
         await handleModalSubmit(interaction);
     }
 
@@ -243,9 +231,9 @@ async function handleOpgaveCommand(interaction) {
 
     } catch (error) {
         console.error('Fejl i opgave command:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved udførelse af kommandoen.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved udførelse af kommandoen.',
+            ephemeral: true
         });
     }
 }
@@ -269,9 +257,9 @@ async function handleButtonInteraction(interaction) {
 
     } catch (error) {
         console.error('Fejl i button interaction:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved behandling af din anmodning.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved behandling af din anmodning.',
+            ephemeral: true
         });
     }
 }
@@ -347,38 +335,47 @@ async function handleModalSubmit(interaction) {
         const navn = interaction.fields.getTextInputValue('opgave_navn');
         const beskrivelse = interaction.fields.getTextInputValue('opgave_beskrivelse');
         const maengde = interaction.fields.getTextInputValue('opgave_maengde');
-        let kanalNavn = interaction.fields.getTextInputValue('opgave_kanal').trim().toLowerCase();
+        const kanalNavn = interaction.fields.getTextInputValue('opgave_kanal');
 
-        let targetChannel = null;
+        console.log(`🔍 Searching for channel: "${kanalNavn}"`);
+        console.log(`📋 Creating opgave: "${navn}" by ${interaction.user.tag}`);
 
-
-        targetChannel = interaction.guild.channels.cache.find(
-            ch => ch.isTextBased() && ch.name.toLowerCase() === kanalNavn
+        // Find the channel - try cache first, then fetch if needed
+        let targetChannel = interaction.guild.channels.cache.find(
+            channel => channel.name.toLowerCase() === kanalNavn.toLowerCase() && channel.isTextBased()
         );
 
+        console.log(`📊 Found ${interaction.guild.channels.cache.size} channels in cache`);
+        console.log(`🎯 Looking for channel name: "${kanalNavn.toLowerCase()}"`);
 
-        if (!targetChannel && kanalNavn.match(/^<#\d+>$/)) {
-            const channelId = kanalNavn.replace(/[<#>]/g, '');
-            targetChannel = interaction.guild.channels.cache.get(channelId);
+        if (targetChannel) {
+            console.log(`✅ Found channel in cache: ${targetChannel.name} (${targetChannel.id})`);
+        } else {
+            console.log(`❌ Channel not found in cache, fetching all channels...`);
         }
 
+        // If not found in cache, try fetching all channels
+        if (!targetChannel) {
+            try {
+                await interaction.guild.channels.fetch();
+                console.log(`📊 After fetch: ${interaction.guild.channels.cache.size} channels in cache`);
 
-        if (!targetChannel && kanalNavn.match(/^\d+$/)) {
-            targetChannel = interaction.guild.channels.cache.get(kanalNavn);
+                targetChannel = interaction.guild.channels.cache.find(
+                    channel => channel.name.toLowerCase() === kanalNavn.toLowerCase() && channel.isTextBased()
+                );
+
+                if (targetChannel) {
+                    console.log(`✅ Found channel after fetch: ${targetChannel.name} (${targetChannel.id})`);
+                } else {
+                    console.log(`❌ Channel still not found after fetch`);
+                    // Log all available text channels for debugging
+                    const textChannels = interaction.guild.channels.cache.filter(ch => ch.isTextBased());
+                    console.log(`📋 Available text channels: ${textChannels.map(ch => ch.name).join(', ')}`);
+                }
+            } catch (fetchError) {
+                console.error('Error fetching channels:', fetchError);
+            }
         }
-
-
-        if (!targetChannel || !targetChannel.isTextBased()) {
-            const errorEmbed = new EmbedBuilder()
-                .setTitle('❌ Kanal Ikke Fundet')
-                .setDescription(`Kunne ikke finde en kanal ud fra: **${kanalNavn}**\n\n**Tips:**\n- Du kan skrive kanalens navn (uden #)\n- Eller du kan bruge kanalens ID\n- Eller brug kanalens mention, fx: <#kanalID>`)
-                .setColor(COLORS.DANGER)
-                .setTimestamp();
-
-            return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
-        }
-
-
 
         if (!targetChannel) {
             const errorEmbed = new EmbedBuilder()
@@ -387,12 +384,29 @@ async function handleModalSubmit(interaction) {
                               '🔍 Tjek at:\n' +
                               '• Kanalnavnet er stavet korrekt\n' +
                               '• Kanalen eksisterer på denne server\n' +
-                              '• Du ikke inkluderer # i navnet')
+                              '• Du ikke inkluderer # i navnet\n' +
+                              '• Botten har adgang til kanalen')
                 .setColor(COLORS.DANGER)
                 .setTimestamp();
 
             return await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
         }
+
+        // Check if bot has permissions to send messages in the target channel
+        const botPermissions = targetChannel.permissionsFor(interaction.client.user);
+        if (!botPermissions.has(['ViewChannel', 'SendMessages'])) {
+            const permissionEmbed = new EmbedBuilder()
+                .setTitle('❌ Mangler Tilladelse')
+                .setDescription(`Jeg har ikke tilladelse til at sende beskeder i <#${targetChannel.id}>\n\n` +
+                              '🔧 Kontakt en administrator for at give mig:\n' +
+                              '• Se Kanal tilladelse\n' +
+                              '• Send Beskeder tilladelse')
+                .setColor(COLORS.DANGER)
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [permissionEmbed], ephemeral: true });
+        }
+
 
         // Create opgave embed
         const opgaveEmbed = new EmbedBuilder()
@@ -422,31 +436,55 @@ async function handleModalSubmit(interaction) {
         const actionRow = new ActionRowBuilder().addComponents(acceptButton, rejectButton);
 
         // Send to target channel
-        await targetChannel.send({ embeds: [opgaveEmbed], components: [actionRow] });
+        try {
+            console.log(`📤 Attempting to send message to channel: ${targetChannel.name} (${targetChannel.id})`);
+            await targetChannel.send({ embeds: [opgaveEmbed], components: [actionRow] });
+            console.log(`✅ Successfully sent opgave to ${targetChannel.name}`);
 
-        // Confirm to user
-        const confirmEmbed = new EmbedBuilder()
-            .setTitle('✅ Opgave Sendt!')
-            .setDescription(`Din opgave **"${navn}"** er blevet sendt til <#${targetChannel.id}>`)
-            .setColor(COLORS.SUCCESS)
-            .setTimestamp();
+            // Confirm to user
+            const confirmEmbed = new EmbedBuilder()
+                .setTitle('✅ Opgave Sendt!')
+                .setDescription(`Din opgave **"${navn}"** er blevet sendt til <#${targetChannel.id}>`)
+                .setColor(COLORS.SUCCESS)
+                .setTimestamp();
 
-        await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+            await interaction.reply({ embeds: [confirmEmbed], ephemeral: true });
+
+        } catch (sendError) {
+            console.error('Error sending message to channel:', sendError);
+
+            const sendErrorEmbed = new EmbedBuilder()
+                .setTitle('❌ Kunne Ikke Sende Besked')
+                .setDescription(`Der opstod en fejl ved afsendelse til <#${targetChannel.id}>\n\n` +
+                              '🔧 Mulige årsager:\n' +
+                              '• Botten mangler tilladelser i kanalen\n' +
+                              '• Kanalen er slettet eller utilgængelig\n' +
+                              '• Netværksfejl\n\n' +
+                              'Prøv igen eller kontakt en administrator.')
+                .setColor(COLORS.DANGER)
+                .setTimestamp();
+
+            return await interaction.reply({ embeds: [sendErrorEmbed], ephemeral: true });
+        }
 
     } catch (error) {
         console.error('Fejl ved modal submit:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved oprettelse af opgaven.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved oprettelse af opgaven.',
+            ephemeral: true
         });
     }
 }
+
+
+
+
 
 // Create private opgave channel
 async function createOpgaveChannel(interaction, creatorId, acceptorId) {
     try {
         const guild = interaction.guild;
-        
+
         // Find or create the category
         let category = guild.channels.cache.find(
             channel => channel.type === 4 && channel.name.toLowerCase() === OPGAVE_CATEGORY_NAME.toLowerCase()
@@ -523,9 +561,9 @@ async function handleAcceptOpgave(interaction) {
         const creatorId = creatorMention ? creatorMention.match(/<@(\d+)>/)?.[1] : null;
 
         if (!creatorId) {
-            return await interaction.reply({ 
-                content: '❌ Kunne ikke finde opgave opretteren.', 
-                ephemeral: true 
+            return await interaction.reply({
+                content: '❌ Kunne ikke finde opgave opretteren.',
+                ephemeral: true
             });
         }
 
@@ -533,7 +571,7 @@ async function handleAcceptOpgave(interaction) {
         const privateChannel = await createOpgaveChannel(interaction, creatorId, interaction.user.id);
 
         // Disable original buttons in the original channel
-        const originalButtons = interaction.message.components[0].components.map(button => 
+        const originalButtons = interaction.message.components[0].components.map(button =>
             ButtonBuilder.from(button).setDisabled(true)
         );
         const disabledRow = new ActionRowBuilder().addComponents(originalButtons);
@@ -543,9 +581,9 @@ async function handleAcceptOpgave(interaction) {
             .setColor(COLORS.SUCCESS)
             .addFields({ name: '✅ Status', value: `Accepteret af <@${interaction.user.id}>`, inline: false });
 
-        await interaction.update({ 
-            embeds: [acceptedEmbed], 
-            components: [disabledRow] 
+        await interaction.update({
+            embeds: [acceptedEmbed],
+            components: [disabledRow]
         });
 
         if (privateChannel) {
@@ -572,17 +610,17 @@ async function handleAcceptOpgave(interaction) {
 
             const completionRow = new ActionRowBuilder().addComponents(completeButton, incompleteButton);
 
-            await privateChannel.send({ 
-                embeds: [opgaveDetailsEmbed], 
-                components: [completionRow] 
+            await privateChannel.send({
+                embeds: [opgaveDetailsEmbed],
+                components: [completionRow]
             });
         }
 
     } catch (error) {
         console.error('Fejl ved accept:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved acceptering af opgaven.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved acceptering af opgaven.',
+            ephemeral: true
         });
     }
 }
@@ -591,7 +629,7 @@ async function handleAcceptOpgave(interaction) {
 async function handleRejectOpgave(interaction) {
     try {
         // Disable original buttons
-        const originalButtons = interaction.message.components[0].components.map(button => 
+        const originalButtons = interaction.message.components[0].components.map(button =>
             ButtonBuilder.from(button).setDisabled(true)
         );
         const disabledRow = new ActionRowBuilder().addComponents(originalButtons);
@@ -601,16 +639,16 @@ async function handleRejectOpgave(interaction) {
             .setColor(COLORS.DANGER)
             .addFields({ name: '❌ Status', value: `Afvist af <@${interaction.user.id}>`, inline: false });
 
-        await interaction.update({ 
-            embeds: [rejectedEmbed], 
-            components: [disabledRow] 
+        await interaction.update({
+            embeds: [rejectedEmbed],
+            components: [disabledRow]
         });
 
     } catch (error) {
         console.error('Fejl ved afvisning:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved afvisning af opgaven.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved afvisning af opgaven.',
+            ephemeral: true
         });
     }
 }
@@ -634,9 +672,9 @@ async function sendCompletionNotification(guild, creatorId, completedBy, opgaveT
             .setColor(COLORS.SUCCESS)
             .setTimestamp()
             .setThumbnail(completedBy.displayAvatarURL({ dynamic: true, size: 128 }))
-            .setFooter({ 
-                text: 'Opgave System • Tak fordi du bruger systemet!', 
-                iconURL: guild.client.user.displayAvatarURL() 
+            .setFooter({
+                text: 'Opgave System • Tak fordi du bruger systemet!',
+                iconURL: guild.client.user.displayAvatarURL()
             });
 
         // Try to send DM first, then fallback to a channel mention
@@ -645,13 +683,13 @@ async function sendCompletionNotification(guild, creatorId, completedBy, opgaveT
             console.log(`✅ Sent completion notification to ${creator.user.tag} via DM`);
         } catch (dmError) {
             console.log(`⚠️ Could not send DM to ${creator.user.tag}, they may have DMs disabled`);
-            
+
             // Find a suitable channel to notify (you might want to customize this)
             const notificationChannel = guild.channels.cache.find(
-                channel => channel.isTextBased() && 
+                channel => channel.isTextBased() &&
                 channel.permissionsFor(guild.client.user).has(['SendMessages', 'ViewChannel'])
             );
-            
+
             if (notificationChannel) {
                 const publicNotification = new EmbedBuilder()
                     .setTitle('🎉 Opgave Fuldført!')
@@ -663,7 +701,7 @@ async function sendCompletionNotification(guild, creatorId, completedBy, opgaveT
                     )
                     .setColor(COLORS.SUCCESS)
                     .setTimestamp();
-                    
+
                 await notificationChannel.send({ embeds: [publicNotification] });
                 console.log(`✅ Sent completion notification to ${notificationChannel.name} channel`);
             }
@@ -681,12 +719,12 @@ async function handleCompleteOpgave(interaction) {
         const customIdParts = interaction.customId.split('_');
         const userId = customIdParts[customIdParts.length - 2];
         const creatorId = customIdParts[customIdParts.length - 1];
-        
+
         // Check if the person clicking is the one who accepted
         if (interaction.user.id !== userId) {
-            return await interaction.reply({ 
-                content: '❌ Kun personen der accepterede opgaven kan markere den som færdig.', 
-                ephemeral: true 
+            return await interaction.reply({
+                content: '❌ Kun personen der accepterede opgaven kan markere den som færdig.',
+                ephemeral: true
             });
         }
 
@@ -707,14 +745,14 @@ async function handleCompleteOpgave(interaction) {
             .setFooter({ text: 'Opgave System • Opgaven er fuldført!', iconURL: client.user.displayAvatarURL() });
 
         // Disable completion buttons
-        const originalButtons = interaction.message.components[0].components.map(button => 
+        const originalButtons = interaction.message.components[0].components.map(button =>
             ButtonBuilder.from(button).setDisabled(true)
         );
         const disabledRow = new ActionRowBuilder().addComponents(originalButtons);
 
-        await interaction.update({ 
-            embeds: [...interaction.message.embeds], 
-            components: [disabledRow] 
+        await interaction.update({
+            embeds: [...interaction.message.embeds],
+            components: [disabledRow]
         });
 
         // Send completion message in the private channel
@@ -722,10 +760,10 @@ async function handleCompleteOpgave(interaction) {
 
         // Send notification to the creator
         await sendCompletionNotification(
-            interaction.guild, 
-            creatorId, 
-            interaction.user, 
-            opgaveTitle, 
+            interaction.guild,
+            creatorId,
+            interaction.user,
+            opgaveTitle,
             Date.now()
         );
 
@@ -787,9 +825,9 @@ const beskrivelse = opgaveTitle; // since the "opgave" is the beskrivelse now
 
     } catch (error) {
         console.error('Fejl ved fuldførelse:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved markering som færdig.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved markering som færdig.',
+            ephemeral: true
         });
     }
 }
@@ -799,12 +837,12 @@ async function handleIncompleteOpgave(interaction) {
     try {
         // Extract user ID from custom ID
         const userId = interaction.customId.split('_').pop();
-        
+
         // Check if the person clicking is the one who accepted
         if (interaction.user.id !== userId) {
-            return await interaction.reply({ 
-                content: '❌ Kun personen der accepterede opgaven kan markere status.', 
-                ephemeral: true 
+            return await interaction.reply({
+                content: '❌ Kun personen der accepterede opgaven kan markere status.',
+                ephemeral: true
             });
         }
 
@@ -825,9 +863,9 @@ async function handleIncompleteOpgave(interaction) {
 
     } catch (error) {
         console.error('Fejl ved ikke-færdig markering:', error);
-        await interaction.reply({ 
-            content: '❌ Der opstod en fejl ved opdatering af status.', 
-            ephemeral: true 
+        await interaction.reply({
+            content: '❌ Der opstod en fejl ved opdatering af status.',
+            ephemeral: true
         });
     }
 }
@@ -839,9 +877,9 @@ async function handlePusherInfo(interaction) {
     );
 
     if (!logChannel) {
-        return await interaction.reply({ 
-            content: '❌ Kunne ikke finde log-kanalen.', 
-            ephemeral: true 
+        return await interaction.reply({
+            content: '❌ Kunne ikke finde log-kanalen.',
+            ephemeral: true
         });
     }
 
@@ -870,8 +908,8 @@ async function handlePusherInfo(interaction) {
         );
 
     if (userMessages.length === 0) {
-        return await interaction.editReply({ 
-            content: `ℹ️ Ingen færdiggjorte opgaver fundet for <@${user.id}>.` 
+        return await interaction.editReply({
+            content: `ℹ️ Ingen færdiggjorte opgaver fundet for <@${user.id}>.`
         });
     }
 
@@ -959,8 +997,6 @@ const buildEmbed = (page) => {
     });
 }
 
-
-
 // Error handling
 client.on('error', console.error);
 client.on('warn', console.warn);
@@ -974,4 +1010,4 @@ const token = process.env.BOT_TOKEN;
 client.login(token);
 
 // Export client for potential external use
-module.exports = client;
+export default client;
