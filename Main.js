@@ -347,12 +347,19 @@ async function handleModalSubmit(interaction) {
         const navn = interaction.fields.getTextInputValue('opgave_navn');
         const beskrivelse = interaction.fields.getTextInputValue('opgave_beskrivelse');
         const maengde = interaction.fields.getTextInputValue('opgave_maengde');
-        const kanalNavn = interaction.fields.getTextInputValue('opgave_kanal');
+        let kanalNavn = interaction.fields.getTextInputValue('opgave_kanal');
+        kanalNavn = kanalNavn
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9\-]/g, ''); 
+
 
         // Find the channel
-        const targetChannel = interaction.guild.channels.cache.find(
-            channel => channel.name.toLowerCase() === kanalNavn.toLowerCase() && channel.isTextBased()
-        );
+    const targetChannel = interaction.guild.channels.cache.find(
+        channel => channel.name === kanalNavn && channel.isTextBased()
+    );
+
 
         if (!targetChannel) {
             const errorEmbed = new EmbedBuilder()
